@@ -10,6 +10,19 @@
 - Supports `--dry-run`, `--debug`, and manual overrides
 - Designed to run interactively or in automation
 
+## 📋 Set up
+
+1. In Jamf Pro, create a dedicated [API role and client](https://learn.jamf.com/en-US/bundle/jamf-pro-documentation-11.17.0/page/API_Roles_and_Clients.html) for use with `jamf-ddm-sofa`, specifying the following privileges:
+    - Create Managed Software Updates
+    - Delete Managed Software Updates
+    - Read Computers
+    - Read Managed Software Updates
+    - Read Smart Computer Groups
+    - Send Computer Remote Command to Download and Install OS X Update
+    - Update Managed Software Updates
+
+1. Obtain an API key from [National Vulnerability Database](https://nvd.nist.gov/developers/request-an-api-key)
+
 ## 🖌️ Customization
 
 ```bash

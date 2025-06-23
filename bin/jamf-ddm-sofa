@@ -14,8 +14,8 @@ sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
 
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
-script_version="2.0.21"
-script_date="2025-06-07"
+script_version="2.0.22b1"
+script_date="2025-06-23"
 log_level="INFO"
 dry_run="false"
 version_type="LATEST_MINOR"
@@ -24,18 +24,18 @@ update_action="DOWNLOAD_INSTALL_SCHEDULE"
 # === Group Config ===
 # Smart Group IDs
 typeset -A smart_group_ids=( 
-    AlphaGroup 5
-    BetaGroup 6
-    GammaGroup 7
-    ReleaseGroup 9
+    AlphaGroup 9
+    BetaGroup 61
+    GammaGroup 24
+    ReleaseGroup 20
 )
 
 # Smart Group Deferral Days
 # These are the number of days to defer updates for each group. (i.e., when the update becomes available to the group.)
 typeset -A deferral_days=( 
-    AlphaGroup 0
-    BetaGroup 3
-    GammaGroup 5
+    AlphaGroup 1
+    BetaGroup 1
+    GammaGroup 2
     ReleaseGroup 10
 )
 
@@ -489,11 +489,11 @@ function determine_deadline_days() {
 
   local severity
   for cve in $cves; do
-    log_debug "Checking severity for CVE: $cve" >&2
+    log_debug "Checking severity for: $cve" >&2
     local response=$(curl -s --header "apiKey: $nvd_api_key" --header "User-Agent: SOFA-Jamf-Processor/1.0" "$nvd_uri?cveId=$cve")
     severity=$(echo "$response" | jq -r '.vulnerabilities[0].cve.metrics.cvssMetricV31[]?.cvssData.baseSeverity' | head -n 1)
 
-    log_debug "CVE $cve Severity: $severity" >&2
+    log_debug "$cve Severity: $severity" >&2
 
     case "$severity" in
       CRITICAL) echo $critical_deadline_days; return;;
@@ -891,7 +891,7 @@ function specific_computer() {
       local computer_general=$(curl -s "$jamf_uri/api/v1/computers-inventory?section=GENERAL&section=OPERATING_SYSTEM&filter=hardware.serialNumber==$computer" \
         -H "Authorization: Bearer $bearer_token" \
         -H "Content-Type: application/json" )
-      local device_id=$(echo "$computer_general" | tr -d '\000-\037' | jq -r '.results[0].id // empty')
+      local device_id=$(printf "%s" "$computer_general" | sed $'s/[\x01-\x08\x0B\x0C\x0E-\x1F]//g' | jq -r '.results[0].id // empty')
   else
       # Use the supplied Jamf Pro Computer ID
       local computer_general=$(curl -s "$jamf_uri/api/v1/computers-inventory?section=GENERAL&section=OPERATING_SYSTEM&filter=id==$computer" \
@@ -900,9 +900,12 @@ function specific_computer() {
       local device_id="${computer}"
   fi
 
-  local computer_name=$(echo "$computer_general" | tr -d '\000-\037' | jq -r '.results[0].general.name // empty')
-  local computer_current_operating_system_version=$(echo "$computer_general" | jq -r '.results[0].operatingSystem.version // empty')
-  local computer_current_operating_system_build=$(echo "$computer_general" | jq -r '.results[0].operatingSystem.build // empty')
+  local computer_name=$(printf "%s" "$computer_general" | sed $'s/[\x01-\x08\x0B\x0C\x0E-\x1F]//g' | jq -r '.results[0].general.name // empty')
+  log_debug "computer_name: $computer_name"
+  local computer_current_operating_system_version=$(printf "%s" "$computer_general" | sed $'s/[\x01-\x08\x0B\x0C\x0E-\x1F]//g' | jq -r '.results[0].operatingSystem.version // empty')
+  log_debug "computer_current_operating_system_version: $computer_current_operating_system_version"
+  local computer_current_operating_system_build=$(printf "%s" "$computer_general" | sed $'s/[\x01-\x08\x0B\x0C\x0E-\x1F]//g' | jq -r '.results[0].operatingSystem.build // empty')
+  log_debug "computer_current_operating_system_build: $computer_current_operating_system_build"
   log_info "$computer_name (ID ${device_id}) is currently running macOS $computer_current_operating_system_version ($computer_current_operating_system_build)"
 
   if is_dry_run; then

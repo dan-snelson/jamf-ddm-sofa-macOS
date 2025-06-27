@@ -14,8 +14,8 @@ sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
 
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
-script_version="2.0.22b2"
-script_date="2025-06-23"
+script_version="2.0.22b3"
+script_date="2025-06-27"
 log_level="INFO"
 dry_run="false"
 version_type="LATEST_MINOR"
@@ -916,15 +916,13 @@ function specific_computer() {
 
   # If manual_deadline is in the past, adjust to tomorrow at 18:00:00
   # Convert both dates to epoch seconds for accurate comparison
-  current_utc=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-  manual_deadline_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${manual_deadline}" "+%s" 2>/dev/null)
-  current_utc_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "${current_utc}" "+%s" 2>/dev/null)
+  manual_deadline_epoch=$(date -j -f "%Y-%m-%d" "${manual_deadline}" "+%s" 2>/dev/null)
+  current_utc=$(date -u +"%Y-%m-%d")
+  current_utc_epoch=$(date -j -f "%Y-%m-%d" "${current_utc}" "+%s" 2>/dev/null)
   if [[ "$manual_deadline_epoch" -lt "$current_utc_epoch" ]]; then
     log_warn "Original deadline, $manual_deadline, is in the past."
     manual_deadline="$(date -u -v+1d +"%Y-%m-%d")T18:00:00"
     log_warn "Adjusted deadline to tomorrow: $manual_deadline"
-  # elif [[ -n "$manual_deadline_epoch" && -n "$current_utc_epoch" && "$manual_deadline_epoch" -lt "$current_utc_epoch" ]]; then
-  #   log_warn "Force date, $manual_deadline, is in the past; users will have ONE HOUR to install the update."
   else
     manual_deadline="${manual_deadline}T18:00:00"
     log_info "Using deadline: $manual_deadline"

@@ -6,7 +6,7 @@
 
 # === API Configuration ===
 jamf_client_id=""
-jamf_client_id_secret=""
+jamf_client_secret=""
 jamf_uri=""
 nvd_api_key=""
 nvd_uri="https://services.nvd.nist.gov/rest/json/cves/2.0"
@@ -886,7 +886,7 @@ function specific_computer() {
 
   # Determine if user provided a Jamf Pro Computer ID (i.e., a number) or a Serial Number (i.e., NOT exclusively a number)
   numberValidation='^[0-9]+$'
-  if ! [[ "${computer}" =~ "${numberValidation}" ]] ; then
+  if ! [[ ${computer} =~ $numberValidation ]] ; then
       # Determine the computer's Jamf Pro Computer ID via the computer's Serial Number
       local computer_general=$(curl -s "$jamf_uri/api/v1/computers-inventory?section=GENERAL&section=OPERATING_SYSTEM&filter=hardware.serialNumber==$computer" \
         -H "Authorization: Bearer $bearer_token" \

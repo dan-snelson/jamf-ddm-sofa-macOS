@@ -10,12 +10,12 @@ jamf_client_secret=""
 jamf_uri=""
 nvd_api_key=""
 nvd_uri="https://services.nvd.nist.gov/rest/json/cves/2.0"
-sofa_uri="https://sofafeed.macadmins.io/v1/macos_data_feed.json"
+sofa_uri="https://sofafeed.macadmins.io/v2/macos_data_feed.json"
 
 # === Script Defaults ===
 script_name="Jamf DDM SOFA Processor"
-script_version="2.0.22"
-script_date="2025-08-21"
+script_version="2.0.23b1"
+script_date="2025-09-29"
 log_level="INFO"
 dry_run="false"
 version_type="LATEST_MINOR"
@@ -75,6 +75,7 @@ typeset deadline_overrides=(
 function script_header() { echo "
 ${script_name} (${script_version})
 by Robert Schroeder (@robjschroeder)
+fork by Dan K. Snelson (@dan-snelson)
 Revised: ${script_date}
 "
 }
@@ -86,10 +87,11 @@ function log() {
   echo "$timestamp [$level] $@" >&2
 }
 
-function log_info()   { log INFO "$@"; }
-function log_debug()  { [[ "$log_level" == "DEBUG" ]] && log DEBUG "$@"; }
-function log_warn()   { log WARNING "$@"; }
-function log_error()  { log ERROR "$@"; }
+function log_debug()    { [[ "$log_level" == "DEBUG" ]] && log DEBUG "$@"; }
+function log_error()    { log ERROR "$@"; }
+function log_info()     { log INFO "$@"; }
+function log_notice()   { log NOTICE "$@"; }
+function log_warn()     { log WARNING "$@"; }
 
 # === CLI Parameter Parsing Enhancement ===
 function parse_cli_credentials() {
@@ -180,7 +182,7 @@ Declarative Software Update plans in Jamf Pro based on smart groups and policy l
     --macOS <version>
         Specifies a manual macOS version to use for the update plans.
         If not specified, the script will use the latest version from the SOFA feed.
-        Example: --macOS 15.5
+        Example: --macOS 26.1
 
     --deadline <YYYY-MM-DD>
         Sets the deadline for the update plans to the specified date: YYYY-MM-DD.
@@ -687,14 +689,14 @@ function process_group_devices() {
   local version_type="${version_type_overrides[$group_name]:-LATEST_MINOR}"
 
   echo ""
-  log_info "Processing Smart Group: $group_name (Deferral: $deferral days, VersionType: $version_type)"
+  log_notice "Processing Smart Group: $group_name (Deferral: $deferral days, VersionType: $version_type)"
 
   local members_json=$(curl -s -H "Authorization: Bearer $bearer_token" \
     "$jamf_uri/api/v2/computer-groups/smart-group-membership/$group_id")
   local device_ids=($(echo "$members_json" | jq -r '.members[]'))
 
     if [[ ${#device_ids[@]} -eq 0 ]]; then
-        log_info "No devices found in smart group: $group_name"
+        log_warn "No devices found in smart group: $group_name"
         return
     fi
 
@@ -710,6 +712,7 @@ function process_group_devices() {
     fi
 
     local device_name=$(printf '%s\n' "$inv_json" | jq -r '.general.name // empty')
+    local serial_number=$(printf '%s\n' "$inv_json" | jq -r '.hardware.serialNumber // empty')
     local model_id=$(printf '%s\n' "$inv_json" | jq -r '.hardware.modelIdentifier // empty')
     local current_version=$(printf '%s\n' "$inv_json" | jq -r '.operatingSystem.version // empty')
 
@@ -720,15 +723,15 @@ function process_group_devices() {
       continue
     fi
 
-    log_debug "Name=$device_name | Model=$model_id | Version=$current_version"
-    log_info "$device_name ($model_id) running macOS $current_version"
+    log_debug "Name=$device_name | Serial=$serial_number | Model=$model_id | Version=$current_version"
+    log_info "$device_name [$serial_number] ($model_id) running macOS $current_version"
 
     local best_match
     best_match=$(find_best_os_match "$current_version" "$model_id" "$version_type" | tr -d '\r\n')
-    log_debug "Best match for $device_name: ${best_match:-<none>}"
+    log_debug "Best match for $device_name [$serial_number]: ${best_match:-<none>}"
 
     if [[ -z "$best_match" ]]; then
-      log_warn "No eligible update found for $device_name"
+      log_warn "No eligible update found for $device_name [$serial_number]"
       continue
     fi
 
@@ -761,17 +764,17 @@ function process_group_devices() {
       log_warn "Force date, $force_date, is in the past; users will have ONE HOUR to install the update."
     fi
 
-    log_info "Eligible update: $device_name → $to_version by $force_date"
-    log_info "Checking for existing plan for $device_name with Install Deadline: $force_date"
+    log_info "Eligible update: $device_name [$serial_number] → $to_version by $force_date"
+    log_info "Checking for existing plan for $device_name [$serial_number] with Install Deadline: $force_date"
     local existing_count=$(get_existing_plan "$device_id" "$force_date")
     log_debug "process_group_devices existing_count: $existing_count"
 
     if [[ "$existing_count" -gt 0 ]]; then
-      log_warn "Existing plan(s) found for $device_name ($device_id) with same deadline. Skipping."
+      log_warn "Existing plan(s) found for $device_name [$serial_number] ($device_id) with same deadline. Skipping."
       log_info "View plan in Terminal: jq . /tmp/jamf_ddm_plans/$force_date/$device_id.json"
     else
       if is_dry_run; then
-        log_info "[DRY RUN] Skipping actual update plan creation for $device_name ($device_id)"
+        log_info "[DRY RUN] Skipping actual update plan creation for $device_name [$serial_number] ($device_id)"
       else
         if [[ -n "${manual_macos_version}" && " ${macos_version_overrides[@]} " =~ " ${group_name} " ]]; then
           manual_available_date=$(date -u -j -f "%Y-%m-%dT%H:%M:%SZ" -v+"$deferral"d "$manual_macos_version_release_date" +"%Y-%m-%dT00:00:00" 2>/dev/null)
@@ -782,7 +785,7 @@ function process_group_devices() {
             continue
           fi
         fi
-        log_info "Creating update plan for $device_name from $current_version to $to_version with deadline $force_date"
+        log_info "Creating update plan for $device_name [$serial_number] from $current_version to $to_version with deadline $force_date"
         create_software_update_plan "$device_id" "$version_type" "$force_date" "$update_action"
       fi
       sleep 1
@@ -876,7 +879,7 @@ function specific_computer() {
     echo ""
   fi
 
-  log_info "Initializing plan to update $computer to macOS $manual_macos_version by $manual_deadline …"
+  log_notice "Initializing plan to update $computer to macOS $manual_macos_version by $manual_deadline …"
 
   # Get Jamf access token
   get_jamf_access_token
@@ -906,7 +909,7 @@ function specific_computer() {
   log_debug "computer_current_operating_system_version: $computer_current_operating_system_version"
   local computer_current_operating_system_build=$(printf "%s" "$computer_general" | sed $'s/[\x01-\x08\x0B\x0C\x0E-\x1F]//g' | jq -r '.results[0].operatingSystem.build // empty')
   log_debug "computer_current_operating_system_build: $computer_current_operating_system_build"
-  log_info "$computer_name (ID ${device_id}) is currently running macOS $computer_current_operating_system_version ($computer_current_operating_system_build)"
+  log_notice "$computer_name (ID ${device_id}) is currently running macOS $computer_current_operating_system_version ($computer_current_operating_system_build)"
 
   if is_dry_run; then
     log_info "[DRY RUN] Skipping actual update plan creation for $computer_name (ID ${device_id}) …"
